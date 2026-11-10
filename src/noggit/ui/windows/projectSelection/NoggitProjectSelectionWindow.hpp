@@ -14,7 +14,6 @@ QT_END_NAMESPACE
 namespace Noggit::Ui
 {
   class settings;
-  class CUpdater;
 }
 
 namespace Noggit::Ui::Component
@@ -51,7 +50,6 @@ namespace Noggit::Ui::Windows
         ::Ui::NoggitProjectSelectionWindow* _ui;
         Noggit::Application::NoggitApplication* _noggit_application;
         Noggit::Ui::settings* _settings;
-        Noggit::Ui::CUpdater* _updater = nullptr;
         //Noggit::Ui::CChangelog* _changelog;
 
         std::unique_ptr<Noggit::Ui::Windows::NoggitWindow> _project_selection_page;

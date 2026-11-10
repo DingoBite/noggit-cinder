@@ -6,11 +6,17 @@
 #include <noggit/ui/windows/projectSelection/NoggitProjectSelectionWindow.hpp>
 
 #include <QApplication>
+#include <QDir>
+#include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLockFile>
 #include <QNetworkProxy>
 #include <QPointer>
+#include <QRandomGenerator>
 #include <QRegularExpression>
+#include <QSaveFile>
+#include <QStandardPaths>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTimer>
@@ -22,6 +28,97 @@ namespace Noggit::Application
   namespace
   {
     constexpr int mcp_max_request_size = 8192;
+
+    bool loadMcpConnection(QString& token, int& port)
+    {
+      if (qEnvironmentVariableIsSet("NOGGIT_MCP_TOKEN"))
+      {
+        token = qEnvironmentVariable("NOGGIT_MCP_TOKEN");
+        port = 38555;
+      }
+      else
+      {
+#ifdef Q_OS_WIN
+        QString const data_root = qEnvironmentVariable("LOCALAPPDATA");
+#else
+        QString const data_root = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+#endif
+        if (data_root.isEmpty())
+        {
+          LogError << "MCP user configuration directory is unavailable" << std::endl;
+          return false;
+        }
+        QString const directory = QDir(data_root).filePath("NoggitCinderMCP");
+        if (!QDir().mkpath(directory))
+        {
+          LogError << "MCP could not create its user configuration directory" << std::endl;
+          return false;
+        }
+
+        QString const path = QDir(directory).filePath("connection.json");
+        QLockFile lock(path + ".lock");
+        if (!lock.tryLock(5000))
+        {
+          LogError << "MCP could not lock its user connection configuration" << std::endl;
+          return false;
+        }
+
+        QFile existing(path);
+        QJsonObject connection;
+        if (existing.exists())
+        {
+          if (!existing.open(QIODevice::ReadOnly) || existing.size() > 4096)
+          {
+            LogError << "MCP could not read its user connection configuration" << std::endl;
+            return false;
+          }
+          auto const document = QJsonDocument::fromJson(existing.readAll());
+          if (!document.isObject())
+          {
+            LogError << "MCP user connection configuration must be a JSON object" << std::endl;
+            return false;
+          }
+          connection = document.object();
+        }
+        else
+        {
+          QString generated_token;
+          for (int i = 0; i < 8; ++i)
+            generated_token += QString("%1").arg(QRandomGenerator::system()->generate(), 8, 16, QLatin1Char('0'));
+          connection = {{"token", generated_token}, {"port", 38555}};
+          auto const data = QJsonDocument(connection).toJson(QJsonDocument::Compact);
+          QSaveFile output(path);
+          if (!output.open(QIODevice::WriteOnly)
+              || !output.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner)
+              || output.write(data) != data.size() || !output.commit())
+          {
+            LogError << "MCP could not save its user connection configuration" << std::endl;
+            return false;
+          }
+        }
+
+        token = connection.value("token").toString();
+        auto const stored_port = connection.value("port");
+        port = stored_port.isDouble() ? stored_port.toInt(-1) : -1;
+      }
+
+      QRegularExpression const token_format("\\A[0-9a-fA-F]{32,128}\\z");
+      if (!token_format.match(token).hasMatch())
+      {
+        LogError << "MCP token must contain 32 to 128 hexadecimal digits" << std::endl;
+        return false;
+      }
+
+      bool valid_port = true;
+      if (qEnvironmentVariableIsSet("NOGGIT_MCP_PORT"))
+        port = qEnvironmentVariable("NOGGIT_MCP_PORT").toInt(&valid_port);
+      if (!valid_port || port < 1 || port > 65535)
+      {
+        LogError << "MCP port must be an integer from 1 to 65535" << std::endl;
+        return false;
+      }
+      return true;
+    }
 
     QJsonObject dispatchMcpRequest(QByteArray const& line, QString const& token)
     {
@@ -103,25 +200,10 @@ namespace Noggit::Application
 
   void startMcpServer()
   {
-    QString const token = qEnvironmentVariable("NOGGIT_MCP_TOKEN");
-    if (token.isEmpty())
+    QString token;
+    int port = 38555;
+    if (!loadMcpConnection(token, port))
       return;
-    QRegularExpression const token_format("\\A[0-9a-fA-F]{32,128}\\z");
-    if (!token_format.match(token).hasMatch())
-    {
-      LogError << "NOGGIT_MCP_TOKEN must contain 32 to 128 hexadecimal digits" << std::endl;
-      return;
-    }
-
-    bool valid_port = true;
-    int const port = qEnvironmentVariableIsSet("NOGGIT_MCP_PORT")
-      ? qEnvironmentVariable("NOGGIT_MCP_PORT").toInt(&valid_port)
-      : 38555;
-    if (!valid_port || port < 1 || port > 65535)
-    {
-      LogError << "NOGGIT_MCP_PORT must be an integer from 1 to 65535" << std::endl;
-      return;
-    }
 
     auto* server = new QTcpServer(QCoreApplication::instance());
     server->setProxy(QNetworkProxy::NoProxy);

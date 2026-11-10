@@ -1,7 +1,8 @@
-"""Stdio MCP server for the opt-in loopback bridge in Noggit Cinder."""
+"""Stdio MCP server for the local loopback bridge in Noggit Cinder."""
 
 import json
 import os
+from pathlib import Path
 import re
 import socket
 import sys
@@ -89,17 +90,50 @@ def read_editor_response(connection):
     raise ValueError("Noggit sent an incomplete or oversized response.")
 
 
-def send_to_editor(method, arguments):
-    token = os.environ.get("NOGGIT_MCP_TOKEN", "")
-    if not re.fullmatch(r"[0-9a-fA-F]{32,128}", token):
-        raise ValueError("Set the same NOGGIT_MCP_TOKEN (32–128 hex characters) in Noggit and the MCP server.")
-    try:
-        port = int(os.environ.get("NOGGIT_MCP_PORT", str(EDITOR_PORT)))
-    except ValueError:
-        port = 0
-    if not 1 <= port <= 65535:
-        raise ValueError("NOGGIT_MCP_PORT must be an integer between 1 and 65535.")
+def connection_path():
+    if sys.platform == "win32":
+        root = os.environ.get("LOCALAPPDATA")
+        if not root:
+            raise ValueError("LOCALAPPDATA is unavailable for the Noggit MCP connection.")
+    elif sys.platform == "darwin":
+        root = Path.home() / "Library" / "Preferences"
+    else:
+        root = os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"
+    return Path(root) / "NoggitCinderMCP" / "connection.json"
 
+
+def connection_settings():
+    if "NOGGIT_MCP_TOKEN" in os.environ:
+        token, port = os.environ["NOGGIT_MCP_TOKEN"], EDITOR_PORT
+    else:
+        try:
+            with connection_path().open("rb") as config:
+                data = config.read(4097)
+            if len(data) > 4096:
+                raise ValueError
+            connection = json.loads(data)
+            if not isinstance(connection, dict):
+                raise ValueError
+            token, port = connection.get("token"), connection.get("port")
+        except FileNotFoundError as error:
+            raise ValueError("Start noggit.exe once to create the local MCP connection.") from error
+        except (OSError, ValueError, RecursionError) as error:
+            raise ValueError("Could not read a valid local Noggit MCP connection file.") from error
+
+    if not isinstance(token, str) or not re.fullmatch(r"[0-9a-fA-F]{32,128}", token):
+        raise ValueError("The Noggit MCP token must contain 32–128 hexadecimal characters.")
+    if "NOGGIT_MCP_PORT" in os.environ:
+        try:
+            port = int(os.environ["NOGGIT_MCP_PORT"])
+        except ValueError:
+            port = 0
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError("NOGGIT_MCP_PORT must be an integer between 1 and 65535.")
+    return token, port
+
+
+def send_to_editor(method, arguments):
+    token, port = connection_settings()
     message = json.dumps({"token": token, "method": method, "arguments": arguments})
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=EDITOR_TIMEOUT) as connection:

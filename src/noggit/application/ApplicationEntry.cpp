@@ -45,7 +45,7 @@ int main(int argc, char *argv[])
   parser->process(q_application);
 
   std::vector<bool> Command;
-  Command.push_back(parser->isSet("disable-update") || !qEnvironmentVariableIsEmpty("NOGGIT_MCP_TOKEN"));
+  Command.push_back(parser->isSet("disable-update"));
   Command.push_back(parser->isSet("force-changelog"));
 
   auto noggit = Noggit::Application::NoggitApplication::instance();
@@ -63,9 +63,9 @@ int main(int argc, char *argv[])
     return q_application.exec();
   }
 
+  Noggit::Application::startMcpServer();
   auto project_selection = new Noggit::Ui::Windows::NoggitProjectSelectionWindow(noggit);
   // project_selection->show();
-  Noggit::Application::startMcpServer();
 
   return q_application.exec();
 }

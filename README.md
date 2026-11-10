@@ -31,27 +31,17 @@ upstream Noggit Red feature set:
   bug that made exported patches silently fail to load in the client.
 - **WMO scaling removed** — per-instance WMO scale is a Legion+ field, so the editor no longer
   shows a scale the 1.12 / 3.3.5 client would ignore.
-- **Built-in auto-updater** (see Releases).
 
 # Releases #
-Prebuilt Windows binaries are attached to each
-[GitHub Release](https://github.com/pkuzic/noggit-cinder/releases) — download and unzip the
-latest one to get started. You only need to do this **once**.
-
-**All future releases download automatically.** Noggit Cinder has a built-in updater: on launch
-it checks the update server and downloads any newer files in the background — so every new
-release lands in your install without a manual download. (You can still grab a full zip from
-Releases for a fresh install or another machine.)
-
-Prebuilt builds are also posted in the community Discord: https://discord.gg/NqvM3xE5uS
+Build this fork from source using the instructions below. Install updates explicitly
+from this repository to keep the fork's MCP integration and fixes.
 
 ## Local MCP bridge
 
-Build this fork and use Python 3.9 or newer. The MCP server in `mcp/noggit_mcp.py`
-uses the Python standard library. Noggit enables its bridge when launched with
-`NOGGIT_MCP_TOKEN` set, and accepts authenticated connections on `127.0.0.1:38555`.
-Set `NOGGIT_MCP_PORT` in both processes if that port is already in use. Launching
-with MCP enabled skips the upstream updater for that process.
+Launch `noggit.exe` directly. The editor starts its authenticated MCP bridge on
+`127.0.0.1:38555` and creates a per-user connection file on first launch. On Windows
+it is `%LOCALAPPDATA%/NoggitCinderMCP/connection.json`. The Python stdio server reads
+that file for each tool call. Use Python 3.9 or newer to run `mcp/noggit_mcp.py`.
 
 For a Codex CLI session on Windows, add this entry to your local Codex `config.toml`,
 using the absolute paths to Python and to the script in your checkout:
@@ -60,18 +50,10 @@ using the absolute paths to Python and to the script in your checkout:
 [mcp_servers.noggit]
 command = 'C:\Python312\python.exe'
 args = ['C:\path\to\noggit-cinder\mcp\noggit_mcp.py']
-env_vars = ["NOGGIT_MCP_TOKEN", "NOGGIT_MCP_PORT"]
 ```
 
-In PowerShell, generate a token and start both processes from the same shell. Use
-the directory containing the fork's executable and bundled resources:
-
-```powershell
-$env:NOGGIT_MCP_TOKEN = python -c "import secrets; print(secrets.token_hex(32))"
-$noggitDir = 'C:\path\to\noggit-install'
-Start-Process -FilePath (Join-Path $noggitDir 'noggit.exe') -WorkingDirectory $noggitDir
-codex
-```
+For explicit sessions and tests, `NOGGIT_MCP_TOKEN` and `NOGGIT_MCP_PORT` override
+the saved connection. Set the same values for the editor and stdio server in that case.
 
 Place the `.noggitproj` under Noggit's configured projects folder (`projects` by default).
 From the MCP client, call `noggit_open_project` with a path such as `WotLK/WotLK.noggitproj`,

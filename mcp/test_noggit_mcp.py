@@ -4,8 +4,12 @@ from pathlib import Path
 import socketserver
 import subprocess
 import sys
+import tempfile
 import threading
 import unittest
+from unittest.mock import patch
+
+import noggit_mcp
 
 
 SERVER = Path(__file__).with_name("noggit_mcp.py")
@@ -121,7 +125,41 @@ class BridgeTest(unittest.TestCase):
         ], NOGGIT_MCP_TOKEN="")
         self.assertEqual(responses[0]["result"]["protocolVersion"], "2025-11-25")
         self.assertTrue(responses[1]["result"]["isError"])
-        self.assertIn("NOGGIT_MCP_TOKEN", responses[1]["result"]["content"][0]["text"])
+        self.assertIn("token", responses[1]["result"]["content"][0]["text"])
+
+    def test_connection_file_is_reloaded_and_env_can_override_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "connection.json"
+            with patch.object(noggit_mcp, "connection_path", return_value=config), patch.dict(os.environ, {}, clear=True):
+                with self.assertRaisesRegex(ValueError, "Start noggit.exe"):
+                    noggit_mcp.connection_settings()
+                config.write_text(json.dumps({"token": TEST_TOKEN, "port": 38556}), encoding="utf-8")
+                self.assertEqual(noggit_mcp.connection_settings(), (TEST_TOKEN, 38556))
+                config.write_text(json.dumps({"token": "b2" * 32, "port": 38557}), encoding="utf-8")
+                self.assertEqual(noggit_mcp.connection_settings(), ("b2" * 32, 38557))
+                with patch.dict(os.environ, {"NOGGIT_MCP_PORT": "38558"}):
+                    self.assertEqual(noggit_mcp.connection_settings(), ("b2" * 32, 38558))
+                config.write_text("invalid JSON", encoding="utf-8")
+                with patch.dict(os.environ, {"NOGGIT_MCP_TOKEN": TEST_TOKEN}):
+                    self.assertEqual(noggit_mcp.connection_settings(), (TEST_TOKEN, 38555))
+
+    def test_malformed_connection_file_fails_without_disclosing_token(self):
+        invalid_connections = [
+            "invalid JSON", "[]", json.dumps({"token": TEST_TOKEN}),
+            json.dumps({"token": TEST_TOKEN, "port": True}),
+            json.dumps({"token": TEST_TOKEN, "port": "38555"}),
+            json.dumps({"token": TEST_TOKEN, "port": 65536}),
+            json.dumps({"token": "bad token", "port": 38555}),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "connection.json"
+            with patch.object(noggit_mcp, "connection_path", return_value=config), patch.dict(os.environ, {}, clear=True):
+                for data in invalid_connections:
+                    with self.subTest(data=data):
+                        config.write_text(data, encoding="utf-8")
+                        result = noggit_mcp.call_tool("status", {}, "2025-11-25")
+                        self.assertTrue(result["isError"])
+                        self.assertNotIn(TEST_TOKEN, json.dumps(result))
 
 
 if __name__ == "__main__":
