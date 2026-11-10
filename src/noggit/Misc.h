@@ -7,6 +7,7 @@
 #include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
 
+#include <algorithm>
 #include <string>
 #include <typeinfo>
 #include <variant>
