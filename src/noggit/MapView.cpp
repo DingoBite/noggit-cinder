@@ -1,5 +1,6 @@
 // This file is part of Noggit3, licensed under GNU General Public License (version 3).
 #include <noggit/DBC.h>
+#include <noggit/HotkeyInput.hpp>
 #include <noggit/MapChunk.h>
 #include <noggit/MapView.h>
 #include <noggit/Misc.h>
@@ -3821,6 +3822,9 @@ void MapView::draw_map()
 
 void MapView::keyPressEvent (QKeyEvent *event)
 {
+  auto const physical_key = Noggit::physicalHotkey(*event);
+  auto const key = physical_key ? physical_key : event->key();
+
   if (event->key() == Qt::Key_Space)
   {
     _mod_space_down = true;
@@ -3837,7 +3841,7 @@ void MapView::keyPressEvent (QKeyEvent *event)
 
   for (auto&& hotkey : hotkeys)
   {
-    if (event->key() == hotkey.key && modifier == hotkey.modifiers && hotkey.condition())
+    if (key == hotkey.key && modifier == hotkey.modifiers && hotkey.condition())
     {
       makeCurrent();
       OpenGL::context::scoped_setter const _ (::gl, context());
@@ -3848,13 +3852,14 @@ void MapView::keyPressEvent (QKeyEvent *event)
   }
 
   checkInputsSettings();
+  auto const& inputs = physical_key ? Noggit::physical_movement_keys : _inputs;
 
   // movement
-  if (event->key() == _inputs[0])
+  if (key == inputs[0])
   {
     moving = 1.0f;
   }
-  if (event->key() == _inputs[1])
+  if (key == inputs[1])
   {
     moving = -1.0f;
   }
@@ -3877,20 +3882,20 @@ void MapView::keyPressEvent (QKeyEvent *event)
     turn = -0.75f;
   }
 
-  if (event->key() == _inputs[2])
+  if (key == inputs[2])
   {
     strafing = 1.0f;
   }
-  if (event->key() == _inputs[3])
+  if (key == inputs[3])
   {
     strafing = -1.0f;
   }
 
-  if (event->key() == _inputs[4])
+  if (key == inputs[4])
   {
     updown = 1.0f;
   }
-  if (event->key() == _inputs[5])
+  if (key == inputs[5])
   {
     updown = -1.0f;
   }
@@ -3901,7 +3906,7 @@ void MapView::keyPressEvent (QKeyEvent *event)
     _camera_moved_since_last_draw = true;
   }
 
-  if (event->key() == Qt::Key_L)
+  if (key == Qt::Key_L)
   {
     freelook = true;
   }
@@ -3961,6 +3966,9 @@ void MapView::keyPressEvent (QKeyEvent *event)
 
 void MapView::keyReleaseEvent (QKeyEvent* event)
 {
+  auto const physical_key = Noggit::physicalHotkey(*event);
+  auto const key = physical_key ? physical_key : event->key();
+
   if (event->key() == Qt::Key_Space)
     _mod_space_down = false;
 
@@ -3968,6 +3976,7 @@ void MapView::keyReleaseEvent (QKeyEvent* event)
     _change_operation_mode = false;
 
   checkInputsSettings();
+  auto const& inputs = physical_key ? Noggit::physical_movement_keys : _inputs;
 
   size_t const modifier
   (((event->modifiers() & Qt::ShiftModifier) ? MOD_shift : 0)
@@ -3979,8 +3988,7 @@ void MapView::keyReleaseEvent (QKeyEvent* event)
   );
   for (auto&& hotkey : hotkeys)
   {
-      auto k = event->key();
-      if (k == hotkey.key && modifier == hotkey.modifiers && hotkey.condition())
+      if (key == hotkey.key && modifier == hotkey.modifiers && hotkey.condition())
       {
           makeCurrent();
           OpenGL::context::scoped_setter const _(::gl, context());
@@ -3991,7 +3999,7 @@ void MapView::keyReleaseEvent (QKeyEvent* event)
   }
 
   // movement
-  if (event->key() == _inputs[0] || event->key() == _inputs[1])
+  if (key == inputs[0] || key == inputs[1])
   {
     moving = 0.0f;
   }
@@ -4006,17 +4014,17 @@ void MapView::keyReleaseEvent (QKeyEvent* event)
     turn  = 0.0f;
   }
 
-  if (event->key() == _inputs[2] || event->key() == _inputs[3])
+  if (key == inputs[2] || key == inputs[3])
   {
     strafing  = 0.0f;
   }
 
-  if (event->key() == _inputs[4] || event->key() == _inputs[5])
+  if (key == inputs[4] || key == inputs[5])
   {
     updown  = 0.0f;
   }
 
-  if (event->key() == Qt::Key_L || event->key() == Qt::Key_Minus)
+  if (key == Qt::Key_L || key == Qt::Key_Minus)
   {
     freelook = false;
   }
@@ -4028,7 +4036,7 @@ void MapView::checkInputsSettings()
   QString _locale = _settings->value("keyboard_locale", "QWERTY").toString();
 
   // default is QWERTY
-  _inputs = std::array<Qt::Key, 6>{Qt::Key_W, Qt::Key_S, Qt::Key_D, Qt::Key_A, Qt::Key_Q, Qt::Key_E};
+  _inputs = Noggit::physical_movement_keys;
 
   if (_locale == "AZERTY")
   {

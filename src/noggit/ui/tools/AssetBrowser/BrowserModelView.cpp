@@ -1,6 +1,7 @@
 #include "BrowserModelView.hpp"
 
 #include <noggit/ContextObject.hpp>
+#include <noggit/HotkeyInput.hpp>
 #include <noggit/WMOInstance.h>
 
 #include <QFocusEvent>
@@ -168,9 +169,12 @@ void ModelViewer::wheelEvent(QWheelEvent* event)
 
 void ModelViewer::keyReleaseEvent(QKeyEvent* event)
 {
-    checkInputsSettings();
+  checkInputsSettings();
+  auto const physical_key = Noggit::physicalHotkey(*event);
+  auto const key = physical_key ? physical_key : event->key();
+  auto const& inputs = physical_key ? Noggit::physical_movement_keys : _inputs;
 
-  if (event->key() == _inputs[0] || event->key() == _inputs[1])
+  if (key == inputs[0] || key == inputs[1])
   {
     moving = 0.0f;
   }
@@ -185,12 +189,12 @@ void ModelViewer::keyReleaseEvent(QKeyEvent* event)
     turn  = 0.0f;
   }
 
-  if (event->key() == _inputs[2] || event->key() == _inputs[3])
+  if (key == inputs[2] || key == inputs[3])
   {
     strafing  = 0.0f;
   }
 
-  if (event->key() == _inputs[4] || event->key() == _inputs[5])
+  if (key == inputs[4] || key == inputs[5])
   {
     updown  = 0.0f;
   }
@@ -211,12 +215,15 @@ void ModelViewer::keyPressEvent(QKeyEvent* event)
   event->accept();
 
   checkInputsSettings();
+  auto const physical_key = Noggit::physicalHotkey(*event);
+  auto const key = physical_key ? physical_key : event->key();
+  auto const& inputs = physical_key ? Noggit::physical_movement_keys : _inputs;
 
-  if (event->key() == _inputs[0])
+  if (key == inputs[0])
   {
     moving = _move_sensitivity;
   }
-  if (event->key() == _inputs[1])
+  if (key == inputs[1])
   {
     moving = -_move_sensitivity;
   }
@@ -239,20 +246,20 @@ void ModelViewer::keyPressEvent(QKeyEvent* event)
     turn = -_move_sensitivity;
   }
 
-  if (event->key() == _inputs[2])
+  if (key == inputs[2])
   {
     strafing = _move_sensitivity;
   }
-  if (event->key() == _inputs[3])
+  if (key == inputs[3])
   {
     strafing = -_move_sensitivity;
   }
 
-  if (event->key() == _inputs[4])
+  if (key == inputs[4])
   {
     updown = _move_sensitivity;
   }
-  if (event->key() == _inputs[5])
+  if (key == inputs[5])
   {
     updown = -_move_sensitivity;
   }
@@ -325,7 +332,7 @@ void ModelViewer::checkInputsSettings()
     QString _locale = _settings->value("keyboard_locale", "QWERTY").toString();
 
     // default is QWERTY
-    _inputs = std::array<Qt::Key, 6>{Qt::Key_W, Qt::Key_S, Qt::Key_D, Qt::Key_A, Qt::Key_Q, Qt::Key_E};
+    _inputs = Noggit::physical_movement_keys;
 
     if (_locale == "AZERTY")
     {
