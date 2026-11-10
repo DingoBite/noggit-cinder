@@ -1,5 +1,6 @@
 // This file is part of Noggit3, licensed under GNU General Public License (version 3).
 #include <noggit/application/Configuration/NoggitApplicationConfiguration.hpp>
+#include <noggit/application/McpServer.hpp>
 #include <noggit/application/NoggitApplication.hpp>
 #include <noggit/errorHandling.h>
 #include <noggit/everwood/EverwoodSmoke.hpp>
@@ -44,7 +45,7 @@ int main(int argc, char *argv[])
   parser->process(q_application);
 
   std::vector<bool> Command;
-  Command.push_back(parser->isSet("disable-update"));
+  Command.push_back(parser->isSet("disable-update") || !qEnvironmentVariableIsEmpty("NOGGIT_MCP_TOKEN"));
   Command.push_back(parser->isSet("force-changelog"));
 
   auto noggit = Noggit::Application::NoggitApplication::instance();
@@ -64,6 +65,7 @@ int main(int argc, char *argv[])
 
   auto project_selection = new Noggit::Ui::Windows::NoggitProjectSelectionWindow(noggit);
   // project_selection->show();
+  Noggit::Application::startMcpServer();
 
   return q_application.exec();
 }

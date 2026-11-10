@@ -221,10 +221,10 @@ MapCreationWizard::MapCreationWizard(std::shared_ptr<Project::NoggitProject> pro
           });
 
   _connection = connect(reinterpret_cast<Noggit::Ui::Windows::NoggitWindow*>(parent),
-                        QOverload<int>::of(&Noggit::Ui::Windows::NoggitWindow::mapSelected)
-                        , [&] (int index)
+                        &Noggit::Ui::Windows::NoggitWindow::mapSelected
+                        , [this] (int index, bool prompt_for_horizon)
                               {
-                                selectMap(index);
+                                selectMap(index, prompt_for_horizon);
                               }
   );
 
@@ -679,7 +679,7 @@ std::string MapCreationWizard::getDifficultyString()
     return "";
 }
 
-void MapCreationWizard::selectMap(int map_id)
+void MapCreationWizard::selectMap(int map_id, bool prompt_for_horizon)
 {
   _is_new_record = false;
 
@@ -724,7 +724,7 @@ void MapCreationWizard::selectMap(int map_id)
   // check if map has a wdl and prompt to create a new one
   std::stringstream filename;
   filename << "World\\Maps\\" << _world->basename << "\\" << _world->basename << ".wdl";
-  if (!Application::NoggitApplication::instance()->clientData()->exists(filename.str()))
+  if (prompt_for_horizon && !Application::NoggitApplication::instance()->clientData()->exists(filename.str()))
   {
      QMessageBox prompt;
      prompt.setText(std::string("This map has no existing horizon data (.wdl file).").c_str());

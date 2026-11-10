@@ -174,7 +174,7 @@ namespace Noggit
 
       std::string getDifficultyString();
 
-      void selectMap(int map_id);
+      void selectMap(int map_id, bool prompt_for_horizon = true);
       void selectMapDifficulty();
 
       void saveCurrentEntry();

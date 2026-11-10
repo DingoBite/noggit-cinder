@@ -45,6 +45,45 @@ Releases for a fresh install or another machine.)
 
 Prebuilt builds are also posted in the community Discord: https://discord.gg/NqvM3xE5uS
 
+## Local MCP bridge
+
+Build this fork and use Python 3.9 or newer. The MCP server in `mcp/noggit_mcp.py`
+uses the Python standard library. Noggit enables its bridge when launched with
+`NOGGIT_MCP_TOKEN` set, and accepts authenticated connections on `127.0.0.1:38555`.
+Set `NOGGIT_MCP_PORT` in both processes if that port is already in use. Launching
+with MCP enabled skips the upstream updater for that process.
+
+For a Codex CLI session on Windows, add this entry to your local Codex `config.toml`,
+using the absolute paths to Python and to the script in your checkout:
+
+```toml
+[mcp_servers.noggit]
+command = 'C:\Python312\python.exe'
+args = ['C:\path\to\noggit-cinder\mcp\noggit_mcp.py']
+env_vars = ["NOGGIT_MCP_TOKEN", "NOGGIT_MCP_PORT"]
+```
+
+In PowerShell, generate a token and start both processes from the same shell. Use
+the directory containing the fork's executable and bundled resources:
+
+```powershell
+$env:NOGGIT_MCP_TOKEN = python -c "import secrets; print(secrets.token_hex(32))"
+$noggitDir = 'C:\path\to\noggit-install'
+Start-Process -FilePath (Join-Path $noggitDir 'noggit.exe') -WorkingDirectory $noggitDir
+codex
+```
+
+Open a project in Noggit. The MCP client can then use these tools:
+
+| Tool | Behavior |
+| --- | --- |
+| `noggit_status` | Check which project and map are open. |
+| `noggit_list_maps` | Get map names and IDs from the active project. |
+| `noggit_open_map` | Open a terrain tile using its `map_id`, `tile_x`, and `tile_y`. Tile coordinates range from 0 through 63. WMO-only maps open at their model position. To switch maps, first return to map selection in Noggit. |
+
+Run `python -B -m unittest discover -s mcp -v` from the source directory to test
+the stdio server against a mock editor.
+
 # LICENSE #
 This software is open source software licensed under GPL3, as found in
 the COPYING file.

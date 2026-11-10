@@ -18,6 +18,7 @@ class MapView;
 class StackedWidget;
 class World;
 
+class QJsonObject;
 class QListWidget;
 
 namespace Noggit::Application
@@ -73,6 +74,7 @@ namespace Noggit::Ui::Windows
 
       void patchWowClient();
 
+      QJsonObject handleMcpRequest(QString const& method, QJsonObject const& arguments);
 
       QMenuBar* _menuBar;
 
@@ -84,7 +86,7 @@ namespace Noggit::Ui::Windows
       void buildMenu();
     signals:
       void exitPromptOpened();
-      void mapSelected(int map_id);
+      void mapSelected(int map_id, bool prompt_for_horizon);
 
     private:
     	std::unique_ptr<Component::BuildMapListComponent> _buildMapListComponent;
@@ -97,7 +99,7 @@ namespace Noggit::Ui::Windows
 
       World* getWorld();
 
-      void loadMap (int map_id);
+      void loadMap (int map_id, bool prompt_for_horizon = true);
 
       void showProjectSettings();
 

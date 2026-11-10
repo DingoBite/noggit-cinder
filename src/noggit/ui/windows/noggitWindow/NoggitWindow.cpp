@@ -4,6 +4,7 @@
 #include <noggit/DBC.h>
 #include <noggit/DBCFile.h>
 #include <noggit/Log.h>
+#include <noggit/MapHeaders.h>
 #include <noggit/MapView.h>
 #include <noggit/project/ApplicationProject.h>
 #include <noggit/ui/FontAwesome.hpp>
@@ -26,16 +27,21 @@
 #include <noggit/database/ClientDatabase.h>
 
 #include <string>
+#include <blizzard-archive-library/include/ClientData.hpp>
 #include <blizzard-archive-library/include/Exception.hpp>
 
 #include <QCheckBox>
+#include <QApplication>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QIcon>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QLineEdit>
 #include <QProcess>
 #include <QScrollArea>
+#include <QSignalBlocker>
 #include <QtGui/QCloseEvent>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QHBoxLayout>
@@ -373,13 +379,126 @@ namespace Noggit::Ui::Windows
       }
   }
 
-  void NoggitWindow::loadMap(int map_id)
+  QJsonObject NoggitWindow::handleMcpRequest(QString const& method, QJsonObject const& arguments)
+  {
+    bool const in_map = map_loaded && _stack_widget->currentWidget() == _map_view;
+    if (method == "status")
+    {
+      QJsonObject status{{"state", in_map ? "map_open" : "map_selection"},
+                         {"project", QString::fromStdString(_project->ProjectName)}};
+      if (in_map)
+        status.insert("map_id", static_cast<int>(_map_view->getWorld()->getMapID()));
+      return {{"result", status}};
+    }
+
+    if (method == "list_maps")
+    {
+      QJsonArray maps;
+      for (int i = 0; i < _continents_table->count(); ++i)
+      {
+        auto* item = _continents_table->item(i);
+        auto const* map = qobject_cast<Widget::MapListItem*>(_continents_table->itemWidget(item));
+        if (map)
+          maps.append(QJsonObject{{"id", map->id()}, {"name", map->name()}, {"type", map->type()},
+                                  {"expansion", map->expansion()}, {"wmo", map->wmo_map()}});
+      }
+      return {{"result", QJsonObject{{"maps", maps}}}};
+    }
+
+    if (method != "open_map")
+      return {{"error", "Unknown editor command"}};
+
+    int const map_id = arguments.value("map_id").toInt(-1);
+    int const tile_x = arguments.value("tile_x").toInt(-1);
+    int const tile_y = arguments.value("tile_y").toInt(-1);
+    TileIndex const tile(tile_x, tile_y);
+    if (map_id < 0 || !tile.is_valid())
+      return {{"error", "Expected a nonnegative map_id and tile_x/tile_y from 0 through 63"}};
+
+    if (QApplication::activeModalWidget())
+      return {{"error", "Close the active Noggit dialog first"}};
+    for (auto* widget : QApplication::topLevelWidgets())
+      if (qobject_cast<UidFixWindow*>(widget) && widget->isVisible())
+        return {{"error", "Finish the pending UID dialog first"}};
+
+    auto const tile_available = [this, &tile](World const& world)
+    {
+      if (!world.mapIndex.hasTile(tile))
+        return false;
+      std::ostringstream path;
+      path << "World\\Maps\\" << world.basename << '\\' << world.basename
+           << '_' << tile.x << '_' << tile.z << ".adt";
+      return _project->ClientData->exists(path.str());
+    };
+
+    glm::vec3 const position((tile_x + 0.5f) * TILESIZE, 0.0f, (tile_y + 0.5f) * TILESIZE);
+    if (in_map)
+    {
+      auto* world = _map_view->getWorld();
+      if (world->getMapID() != static_cast<unsigned int>(map_id))
+        return {{"error", "Return to map selection in Noggit before opening another map"}};
+      if (world->mapIndex.hasAGlobalWMO())
+        return {{"result", QJsonObject{{"status", "already_open"}, {"map_id", map_id}, {"wmo", true}}}};
+      if (!tile_available(*world))
+        return {{"error", "That tile does not exist on this map"}};
+      if (!_map_view->isValid())
+        return {{"error", "The map view is still initializing"}};
+      _map_view->move_camera_with_auto_height(position);
+    }
+    else
+    {
+      if (_right_side->currentIndex() != 0)
+        return {{"error", "Switch to the Enter map tab first"}};
+      QListWidgetItem* selected_map = nullptr;
+      for (int i = 0; i < _continents_table->count(); ++i)
+      {
+        auto* item = _continents_table->item(i);
+        if (item->data(Qt::UserRole).toInt() == map_id)
+        {
+          selected_map = item;
+          break;
+        }
+      }
+      if (!selected_map)
+        return {{"error", "No editable map has that ID"}};
+
+      QSignalBlocker const blocker(_continents_table);
+      _continents_table->setCurrentItem(selected_map);
+      loadMap(map_id, false);
+      auto* world = getWorld();
+      if (!world || world->getMapID() != static_cast<unsigned int>(map_id))
+        return {{"error", "Noggit could not load this map"}};
+
+      if (world->mapIndex.hasAGlobalWMO())
+      {
+        enterMapAt(position, math::degrees(30.f), math::degrees(90.f));
+        return {{"result", QJsonObject{{"status", "opened"}, {"map_id", map_id}, {"wmo", true}}}};
+      }
+
+      if (!tile_available(*world))
+        return {{"error", "That tile does not exist on this map"}};
+      if (QSettings().value("project/mysql/enabled", false).toBool())
+        return {{"error", "When MySQL UID storage is enabled, enter the map from Noggit first"}};
+      auto uid_mode = uid_fix_mode::max_uid;
+      if (uid_storage::hasMaxUIDStored(map_id))
+      {
+        world->mapIndex.loadMaxUID();
+        uid_mode = uid_fix_mode::none;
+      }
+      enterMapAt(position, math::degrees(30.f), math::degrees(90.f), uid_mode);
+    }
+
+    return {{"result", QJsonObject{{"status", "opened"}, {"map_id", map_id},
+                                   {"tile_x", tile_x}, {"tile_y", tile_y}}}};
+  }
+
+  void NoggitWindow::loadMap(int map_id, bool prompt_for_horizon)
   {
     // _minimap->world(nullptr);
 
     // World is now created only here in
     // void MapCreationWizard::selectMap(int map_id)
-    emit mapSelected(map_id);
+    emit mapSelected(map_id, prompt_for_horizon);
 
     /*
     _world.reset();
