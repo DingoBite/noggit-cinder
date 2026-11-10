@@ -2603,7 +2603,8 @@ MapView::MapView( math::degrees camera_yaw0
   setMinimumHeight(200);
   setMaximumHeight(10000);
   setAttribute(Qt::WA_OpaquePaintEvent, true);
-  setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
+  // Keep the last frame when Qt requests a paint between the editor's render ticks.
+  setUpdateBehavior(QOpenGLWidget::PartialUpdate);
 
   _world->LoadSavedSelectionGroups(); // not doing this in world constructor because noggit loads world twice
 
