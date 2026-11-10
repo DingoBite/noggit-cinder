@@ -42,7 +42,7 @@ namespace Noggit::Project
     project_writer.saveProject(&project, project_path);
   }
 
-  std::shared_ptr<NoggitProject> ApplicationProject::loadProject(std::filesystem::path const& project_path)
+  std::shared_ptr<NoggitProject> ApplicationProject::loadProject(std::filesystem::path const& project_path, bool show_error_dialogs)
   {
     ApplicationProjectReader project_reader{};
     auto project = project_reader.readProject(project_path);
@@ -50,6 +50,8 @@ namespace Noggit::Project
     if (!project.has_value())
     {
       LogError << "loadProject() failed, Project is null" << std::endl;
+      if (show_error_dialogs && std::filesystem::is_regular_file(project_path))
+        QMessageBox::critical(nullptr, "Error", "Failed to read project");
       return {};
     }
     else
@@ -100,24 +102,27 @@ namespace Noggit::Project
     try
     {
       project->ClientData = std::make_shared<BlizzardArchive::ClientData>(
-        project->ClientPath, client_archive_version, client_archive_locale, project_path.generic_string());
+        project->ClientPath, client_archive_version, client_archive_locale, project->ProjectPath);
     }
     catch (BlizzardArchive::Exceptions::Locale::LocaleNotFoundError& e)
     {
       LogError << e.what() << std::endl;
-      QMessageBox::critical(nullptr, "Error", e.what());
+      if (show_error_dialogs)
+        QMessageBox::critical(nullptr, "Error", e.what());
       return {};
     }
     catch (BlizzardArchive::Exceptions::Locale::IncorrectLocaleModeError& e)
     {
       LogError << e.what() << std::endl;
-      QMessageBox::critical(nullptr, "Error", e.what());
+      if (show_error_dialogs)
+        QMessageBox::critical(nullptr, "Error", e.what());
       return {};
     }
     catch (BlizzardArchive::Exceptions::Archive::ArchiveOpenError& e)
     {
       LogError << e.what() << std::endl;
-      QMessageBox::critical(nullptr, "Error", e.what());
+      if (show_error_dialogs)
+        QMessageBox::critical(nullptr, "Error", e.what());
       return {};
     }
     catch (...)

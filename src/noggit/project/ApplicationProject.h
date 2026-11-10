@@ -168,7 +168,7 @@ namespace Noggit::Project
     void createProject(std::filesystem::path const& project_path, std::filesystem::path const& client_path,
                        std::string const& client_version, std::string const& project_name, bool everwood_mode = false);
 
-    std::shared_ptr<NoggitProject> loadProject(std::filesystem::path const& project_path);
+    std::shared_ptr<NoggitProject> loadProject(std::filesystem::path const& project_path, bool show_error_dialogs = true);
 
     void loadExtraData(NoggitProject& project);
   };

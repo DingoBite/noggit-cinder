@@ -3,6 +3,10 @@
 
 #include <QMainWindow>
 
+#include <filesystem>
+
+class QJsonObject;
+
 QT_BEGIN_NAMESPACE
 namespace Ui { class NoggitProjectSelectionWindow; }
 QT_END_NAMESPACE
@@ -41,6 +45,7 @@ namespace Noggit::Ui::Windows
     public:
         NoggitProjectSelectionWindow(Noggit::Application::NoggitApplication* noggit_app, QWidget* parent = nullptr);
         ~NoggitProjectSelectionWindow();
+        QJsonObject openMcpProject(QString const& requested_path);
 
     private:
         ::Ui::NoggitProjectSelectionWindow* _ui;
@@ -51,6 +56,8 @@ namespace Noggit::Ui::Windows
 
         std::unique_ptr<Noggit::Ui::Windows::NoggitWindow> _project_selection_page;
         std::unique_ptr<Component::LoadProjectComponent> _load_project_component;
+
+        bool openProjectFile(std::filesystem::path const& file_path, bool show_error_dialogs);
 
         void handleContextMenuProjectListItemDelete(std::string const& project_path);
         void handleContextMenuProjectListItemForget(std::string const& project_path);

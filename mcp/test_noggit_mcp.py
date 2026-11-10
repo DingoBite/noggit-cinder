@@ -50,7 +50,7 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(responses[1]["result"]["protocolVersion"], "2025-06-18")
         self.assertEqual(
             {tool["name"] for tool in responses[2]["result"]["tools"]},
-            {"noggit_status", "noggit_list_maps", "noggit_open_map"},
+            {"noggit_status", "noggit_open_project", "noggit_list_maps", "noggit_open_map"},
         )
         self.assertIn("tile_x", responses[3]["result"]["content"][0]["text"])
         self.assertTrue(responses[3]["result"]["isError"])
@@ -68,8 +68,10 @@ class BridgeTest(unittest.TestCase):
                 received.append(request)
                 if request["method"] == "open_map":
                     response = {"error": "This tile does not exist."}
-                else:
+                elif request["method"] == "open_project":
                     response = {"result": {"state": "map_selection", "project": "Нордскол"}}
+                else:
+                    response = {"result": {"state": "project_selection"}}
                 self.wfile.write(json.dumps(response, ensure_ascii=False).encode("utf-8") + b"\n")
 
         with socketserver.TCPServer(("127.0.0.1", 0), Editor) as editor:
@@ -79,7 +81,8 @@ class BridgeTest(unittest.TestCase):
                 responses = run_server([
                     request(1, "initialize", protocolVersion="2025-11-25"),
                     request(2, "tools/call", name="noggit_status"),
-                    request(3, "tools/call", name="noggit_open_map", arguments={"map_id": 1, "tile_x": 2, "tile_y": 3}),
+                    request(3, "tools/call", name="noggit_open_project", arguments={"project_path": "Нордскол\\Map.noggitproj"}),
+                    request(4, "tools/call", name="noggit_open_map", arguments={"map_id": 1, "tile_x": 2, "tile_y": 3}),
                 ], NOGGIT_MCP_TOKEN=TEST_TOKEN, NOGGIT_MCP_PORT=str(editor.server_address[1]))
             finally:
                 editor.shutdown()
@@ -87,12 +90,29 @@ class BridgeTest(unittest.TestCase):
 
         self.assertEqual(received, [
             {"token": TEST_TOKEN, "method": "status", "arguments": {}},
+            {"token": TEST_TOKEN, "method": "open_project", "arguments": {"project_path": "Нордскол/Map.noggitproj"}},
             {"token": TEST_TOKEN, "method": "open_map", "arguments": {"map_id": 1, "tile_x": 2, "tile_y": 3}},
         ])
-        self.assertEqual(responses[1]["result"]["structuredContent"]["project"], "Нордскол")
-        self.assertTrue(responses[2]["result"]["isError"])
-        self.assertEqual(responses[2]["result"]["content"][0]["text"], "This tile does not exist.")
+        self.assertEqual(responses[1]["result"]["structuredContent"]["state"], "project_selection")
+        self.assertEqual(responses[2]["result"]["structuredContent"]["project"], "Нордскол")
+        self.assertTrue(responses[3]["result"]["isError"])
+        self.assertEqual(responses[3]["result"]["content"][0]["text"], "This tile does not exist.")
         self.assertNotIn(TEST_TOKEN, json.dumps(responses))
+
+    def test_reject_project_paths_outside_projects_folder(self):
+        invalid_paths = [
+            "../foo.noggitproj", "foo\\..\\bar.noggitproj", "C:foo.noggitproj",
+            "C:/foo.noggitproj", "/foo.noggitproj", "\\\\localhost\\share\\foo.noggitproj",
+            "foo/.. /bar.noggitproj", "foo\x00.noggitproj", "foo.json", "a" * 512 + ".noggitproj",
+        ]
+        responses = run_server([
+            request(1, "initialize", protocolVersion="2025-11-25"),
+            *(request(index, "tools/call", name="noggit_open_project", arguments={"project_path": path})
+              for index, path in enumerate(invalid_paths, start=2)),
+        ], NOGGIT_MCP_TOKEN="")
+        for response in responses[1:]:
+            self.assertTrue(response["result"]["isError"])
+            self.assertIn("project_path", response["result"]["content"][0]["text"])
 
     def test_missing_configuration_returns_tool_error(self):
         responses = run_server([

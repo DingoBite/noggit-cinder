@@ -3,6 +3,7 @@
 #include <noggit/application/McpServer.hpp>
 #include <noggit/Log.h>
 #include <noggit/ui/windows/noggitWindow/NoggitWindow.hpp>
+#include <noggit/ui/windows/projectSelection/NoggitProjectSelectionWindow.hpp>
 
 #include <QApplication>
 #include <QJsonDocument>
@@ -41,7 +42,22 @@ namespace Noggit::Application
       {
         auto* editor = qobject_cast<Ui::Windows::NoggitWindow*>(widget);
         if (editor && editor->isVisible())
+        {
+          if (method == "open_project")
+            return {{"error", "A Noggit project is already open"}};
           return editor->handleMcpRequest(method, arguments.toObject());
+        }
+      }
+
+      if (method == "open_project")
+      {
+        for (auto* widget : QApplication::topLevelWidgets())
+        {
+          auto* selector = qobject_cast<Ui::Windows::NoggitProjectSelectionWindow*>(widget);
+          if (selector && selector->isVisible())
+            return selector->openMcpProject(arguments.toObject().value("project_path").toString());
+        }
+        return {{"error", "The Noggit project selection window is unavailable"}};
       }
 
       if (method == "status")

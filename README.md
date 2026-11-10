@@ -73,11 +73,14 @@ Start-Process -FilePath (Join-Path $noggitDir 'noggit.exe') -WorkingDirectory $n
 codex
 ```
 
-Open a project in Noggit. The MCP client can then use these tools:
+Place the `.noggitproj` under Noggit's configured projects folder (`projects` by default).
+From the MCP client, call `noggit_open_project` with a path such as `WotLK/WotLK.noggitproj`,
+then use `noggit_list_maps` and `noggit_open_map` to enter the first map.
 
 | Tool | Behavior |
 | --- | --- |
 | `noggit_status` | Check which project and map are open. |
+| `noggit_open_project` | Open an existing `.noggitproj` from the project selection screen. `project_path` is relative to the configured projects folder. |
 | `noggit_list_maps` | Get map names and IDs from the active project. |
 | `noggit_open_map` | Open a terrain tile using its `map_id`, `tile_x`, and `tile_y`. Tile coordinates range from 0 through 63. WMO-only maps open at their model position. To switch maps, first return to map selection in Noggit. |
 

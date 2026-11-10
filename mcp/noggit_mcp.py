@@ -20,6 +20,18 @@ TOOLS = {
         "annotations": {"readOnlyHint": True, "openWorldHint": False},
         "properties": {},
     },
+    "open_project": {
+        "description": "Open an existing Noggit project from the project selection screen.",
+        "annotations": {"destructiveHint": False, "openWorldHint": False},
+        "properties": {
+            "project_path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "Path to a .noggitproj relative to Noggit's projects folder, e.g. WotLK/WotLK.noggitproj.",
+            },
+        },
+    },
     "list_maps": {
         "description": "List the available maps in the active Noggit project and their map IDs.",
         "annotations": {"readOnlyHint": True, "openWorldHint": False},
@@ -110,16 +122,33 @@ def send_to_editor(method, arguments):
     raise ValueError("Noggit sent an invalid response.")
 
 
+def project_relative_path(value):
+    message = "project_path must be a .noggitproj path relative to Noggit's projects folder (up to 512 characters)."
+    if not isinstance(value, str) or len(value) > 512:
+        raise ValueError(message)
+    path = value.replace("\\", "/")
+    if (
+        not path.lower().endswith(".noggitproj")
+        or re.search(r'[\x00-\x1f<>:"|?*]', path)
+        or any(not part or part.endswith((".", " ")) for part in path.split("/"))
+    ):
+        raise ValueError(message)
+    return path
+
+
 def call_tool(method, arguments, protocol_version):
     properties = TOOLS[method]["properties"]
     try:
         if arguments.keys() != properties.keys():
             expected = ", ".join(properties) or "no arguments"
             raise ValueError(f"Expected {expected}.")
-        for name, value in arguments.items():
-            minimum, maximum = properties[name]["minimum"], properties[name]["maximum"]
-            if type(value) is not int or not minimum <= value <= maximum:
-                raise ValueError(f"{name} must be an integer between {minimum} and {maximum}.")
+        if method == "open_project":
+            arguments = {"project_path": project_relative_path(arguments["project_path"])}
+        else:
+            for name, value in arguments.items():
+                minimum, maximum = properties[name]["minimum"], properties[name]["maximum"]
+                if type(value) is not int or not minimum <= value <= maximum:
+                    raise ValueError(f"{name} must be an integer between {minimum} and {maximum}.")
         result = send_to_editor(method, arguments)
     except ValueError as error:
         return {"content": [{"type": "text", "text": str(error)}], "isError": True}

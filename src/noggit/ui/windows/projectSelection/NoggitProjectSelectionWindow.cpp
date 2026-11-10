@@ -1,6 +1,7 @@
 #include <noggit/application/Configuration/NoggitApplicationConfiguration.hpp>
 #include <noggit/application/NoggitApplication.hpp>
 #include <noggit/Log.h>
+#include <noggit/project/ApplicationProject.h>
 #include <noggit/project/ApplicationProjectReader.h>
 #include <noggit/project/CurrentProject.hpp>
 #include <noggit/ui/FontAwesome.hpp>
@@ -14,14 +15,16 @@
 #include <noggit/ui/windows/updater/Updater.h>
 
 
+#include <QApplication>
 #include <QFile>
 #include <QFileDialog>
+#include <QJsonObject>
 #include <QSettings>
 #include <QString>
 
 #include "ui_NoggitProjectSelectionWindow.h"
 
-#include <filesystem>
+#include <algorithm>
 
 
 using namespace Noggit::Ui::Windows;
@@ -31,6 +34,7 @@ NoggitProjectSelectionWindow::NoggitProjectSelectionWindow(Noggit::Application::
   : QMainWindow(parent)
   , _ui(new ::Ui::NoggitProjectSelectionWindow)
   , _noggit_application(noggit_app)
+  , _load_project_component(std::make_unique<Component::LoadProjectComponent>())
 {
   setWindowFlags(Qt::Window | Qt::MSWindowsFixedSizeDialogHint);
 
@@ -39,7 +43,8 @@ NoggitProjectSelectionWindow::NoggitProjectSelectionWindow(Noggit::Application::
   QSettings settings;
   int favorite_proj_idx = settings.value("favorite_project", -1).toInt();
 
-  bool load_favorite = settings.value("auto_load_fav_project", true).toBool();
+  bool load_favorite = qEnvironmentVariableIsEmpty("NOGGIT_MCP_TOKEN")
+    && settings.value("auto_load_fav_project", true).toBool();
 
   // if it has client data, it means it already loaded before and we exited through the menu, skip autoloading favorite
   if (noggit_app->hasClientData())
@@ -112,8 +117,6 @@ NoggitProjectSelectionWindow::NoggitProjectSelectionWindow(Noggit::Application::
   _settings = new Noggit::Ui::settings(this);
   //_changelog = new Noggit::Ui::CChangelog(this);
 
-  _load_project_component = std::make_unique<Component::LoadProjectComponent>();
-
   _ui->settings_button->setIcon(Noggit::Ui::FontAwesomeIcon(Noggit::Ui::FontAwesome::Icons::cog));
   _ui->settings_button->setIconSize(QSize(20,20));
 
@@ -160,8 +163,6 @@ NoggitProjectSelectionWindow::NoggitProjectSelectionWindow(Noggit::Application::
 
   QObject::connect(_ui->button_open_existing_project, &QPushButton::clicked, [=]
                    {
-                     auto project_reader = Noggit::Project::ApplicationProjectReader();
-
                      QString proj_file = QFileDialog::getOpenFileName(this, "Open File",
                                                                      "/",
                                                                      "*.noggitproj");
@@ -173,39 +174,7 @@ NoggitProjectSelectionWindow::NoggitProjectSelectionWindow(Noggit::Application::
                      }
 
 
-                     std::filesystem::path filepath(proj_file.toStdString());
-
-                     auto project = project_reader.readProject(filepath.parent_path());
-
-                     if (!project.has_value())
-                     {
-                       QMessageBox::critical(this, "Error", "Failed to read project");
-                       return;
-                     }
-
-                     Component::RecentProjectsComponent::registerProjectChange(filepath.parent_path().string());
-
-                     auto application_configuration = _noggit_application->getConfiguration();
-                     auto application_projects_folder_path = std::filesystem::path(application_configuration->ApplicationProjectPath);
-                     auto application_project_service = Noggit::Project::ApplicationProject(application_configuration);
-
-                     auto project_to_launch = application_project_service.loadProject(filepath.parent_path());
-
-                     if (!project_to_launch)
-                     {
-                       return;
-                     }
-
-                     Noggit::Application::NoggitApplication::instance()->setClientData(project_to_launch->ClientData);
-
-                     Noggit::Project::CurrentProject::initialize(project_to_launch.get());
-
-                     _project_selection_page = std::make_unique<Noggit::Ui::Windows::NoggitWindow>(
-                         _noggit_application->getConfiguration(),
-                         project_to_launch);
-                     _project_selection_page->showMaximized();
-
-                     close();
+                     openProjectFile(std::filesystem::path(proj_file.toStdU16String()), true);
                    }
   );
 
@@ -260,6 +229,73 @@ NoggitProjectSelectionWindow::NoggitProjectSelectionWindow(Noggit::Application::
       }
   }*/
   show();
+}
+
+bool NoggitProjectSelectionWindow::openProjectFile(std::filesystem::path const& file_path, bool show_error_dialogs)
+{
+  auto const configuration = _noggit_application->getConfiguration();
+  auto project = Noggit::Project::ApplicationProject(configuration).loadProject(file_path, show_error_dialogs);
+  if (!project)
+    return false;
+
+  _noggit_application->setClientData(project->ClientData);
+  Noggit::Project::CurrentProject::initialize(project.get());
+  try
+  {
+    _project_selection_page = std::make_unique<NoggitWindow>(configuration, project);
+  }
+  catch (...)
+  {
+    Noggit::Project::CurrentProject::initialize(nullptr);
+    _noggit_application->setClientData({});
+    throw;
+  }
+  Component::RecentProjectsComponent::registerProjectChange(project->ProjectPath);
+  _project_selection_page->showMaximized();
+  close();
+  return true;
+}
+
+QJsonObject NoggitProjectSelectionWindow::openMcpProject(QString const& requested_path)
+{
+  if (QApplication::activeModalWidget())
+    return {{"error", "Close the active Noggit dialog first"}};
+  auto const invalid_path = QJsonObject{{"error", "Expected a relative .noggitproj path inside the configured projects directory"}};
+  if (requested_path.isEmpty() || requested_path.size() > 512 || requested_path.contains(QChar::Null)
+      || requested_path.contains(':'))
+    return invalid_path;
+
+  auto relative_name = requested_path;
+  relative_name.replace('\\', '/');
+  std::filesystem::path const relative_path(relative_name.toStdU16String());
+  if (relative_path.has_root_path()
+      || std::find(relative_path.begin(), relative_path.end(), "..") != relative_path.end()
+      || !relative_name.endsWith(".noggitproj", Qt::CaseInsensitive))
+    return invalid_path;
+
+  auto const configuration = _noggit_application->getConfiguration();
+  std::filesystem::path const configured_root(
+    QString::fromStdString(configuration->ApplicationProjectPath).toStdU16String());
+  std::error_code error;
+  auto const project_root = std::filesystem::canonical(configured_root, error);
+  if (error || !std::filesystem::is_directory(project_root, error))
+    return {{"error", "The configured Noggit projects directory is unavailable"}};
+
+  auto const project_file = std::filesystem::canonical(project_root / relative_path, error);
+  if (error)
+    return {{"error", "The requested Noggit project was not found"}};
+
+  auto const [root_end, file_end] = std::mismatch(project_root.begin(), project_root.end(),
+                                                 project_file.begin(), project_file.end());
+  if (root_end != project_root.end() || file_end == project_file.end()
+      || QString::fromStdU16String(project_file.extension().u16string()).compare(".noggitproj", Qt::CaseInsensitive) != 0
+      || !std::filesystem::is_regular_file(project_file, error))
+    return invalid_path;
+
+  if (!openProjectFile(project_file, false))
+    return {{"error", "Noggit could not load the requested project. See the Noggit log."}};
+
+  return _project_selection_page->handleMcpRequest("status", {});
 }
 
 void NoggitProjectSelectionWindow::handleContextMenuProjectListItemDelete(std::string const& project_path)
